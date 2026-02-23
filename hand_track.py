@@ -17,6 +17,10 @@ if not os.path.exists(csv_file):
         h2_headers = [f"h2_joint_{i}_{axis}" for i in range(21) for axis in ['x', 'y', 'z']]
         writer.writerow(h1_headers + h2_headers + ['label', 'image_file'])
 
+# Create images folder if it doesn't exist
+if not os.path.exists('images'):
+    os.makedirs('images')
+
 base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
 options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=2)
 detector = vision.HandLandmarker.create_from_options(options)
@@ -92,8 +96,8 @@ while cap.isOpened():
                 # Pad with zeros if only one hand is detected
                 while len(hand_data) < 126:  # 21 joints * 3 coordinates * 2 hands
                     hand_data.append(0.0)
-                label = "Rat"
-                img_filename = f"{label}_{img_counter}.jpg"
+                label = "Snake"
+                img_filename = f"images/{label}_{img_counter}.jpg"
                 cv2.imwrite(img_filename, frame)  # Save original frame without landmarks
                 with open(csv_file, mode='a', newline='') as f:
                     writer = csv.writer(f)

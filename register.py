@@ -4,20 +4,15 @@ import time
 import cv2
 
 class Register:
-    def __init__(self, image_directory="images", file_prefix="no_class", cooldown_seconds=1.0):
+    def __init__(self, image_directory="images", file_prefix="no_class", cooldown_seconds=2.0):
         self.image_dir = Path(image_directory)
         self.image_dir.mkdir(exist_ok=True)
         self.file_prefix = file_prefix
         self.cooldown_seconds = cooldown_seconds
         self.last_saved_at = None
     
-    def update(self, frame, classes_in_frame):
-        classes = list(classes_in_frame) if classes_in_frame is not None else []
-
-        has_missing_name = len(classes) == 0 or any(
-            class_name is None or str(class_name).strip() == ""
-            for class_name in classes
-        )
+    def update(self, frame, class_in_frame):
+        has_missing_name = class_in_frame is None or str(class_in_frame).strip() == ""
 
         if not has_missing_name:
             return None

@@ -1,5 +1,4 @@
 from collections import Counter, deque
-import cv2
 
 class Stabilizer:
     def __init__(self, window_frames=20, uptime_threshold=0.5):
@@ -8,9 +7,12 @@ class Stabilizer:
         self.frame_history = deque(maxlen=window_frames)
         self.last_emitted_class = None
 
-    def update(self, classes_in_frame):
-        frame_classes = set(classes_in_frame) if classes_in_frame else set()
-        self.frame_history.append(frame_classes)
+    def update(self, class_in_frame):
+        frame_class = class_in_frame.strip() if isinstance(class_in_frame, str) else None
+        if frame_class == "":
+            frame_class = None
+
+        self.frame_history.append(frame_class)
 
         if not self.frame_history:
             return None
@@ -18,8 +20,8 @@ class Stabilizer:
         frame_count = len(self.frame_history)
         class_counter = Counter()
 
-        for classes in self.frame_history:
-            for class_name in classes:
+        for class_name in self.frame_history:
+            if class_name is not None:
                 class_counter[class_name] += 1
 
         stable_class = None
@@ -38,18 +40,6 @@ class Stabilizer:
             return None
 
         self.last_emitted_class = stable_class
-        
-        cv2.putText(
-            None,
-            f"Stabilized class: {stable_class} (uptime: {best_uptime:.2f})",
-            (10, 100),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.9,
-            (255, 255, 0),
-            2,
-            cv2.LINE_AA,
-        )
-        
         return stable_class
 
     
@@ -59,5 +49,5 @@ class Stabilizer:
             return 0.0
 
         frame_count = len(self.frame_history)
-        active_frames = sum(1 for classes in self.frame_history if class_name in classes)
+        active_frames = sum(1 for frame_class in self.frame_history if frame_class == class_name)
         return active_frames / frame_count
