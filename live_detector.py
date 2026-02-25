@@ -1,216 +1,179 @@
 import cv2
 import time
-import numpy as np
-import torch
-from ultralytics import YOLO
+from animator import Animator
+from chainer import Chainer
+from detector import Detector
+from frame_annotator import FrameAnnotator
 from stabilizer import Stabilizer
 from logger import Logger
 from frame_grabber import LatestFrameGrabber
 
-# 1. INITIALIZE THE MODEL, STABILIZER, AND LOGGER
-MODEL_PATH = 'bests.engine'  # Path to the exported YOLOv8 engine file
-CLASS = "Tiger"
+class LiveDetector:
+    def __init__(
+        self,
+        model_path='bests.engine',
+        default_class="Tiger",
+        img_size=320,
+        confidence=0.5,
+        iou=0.5,
+        cam_width=640,
+        cam_height=480,
+        cam_fps_target=60,
+        max_detections=1,
+        flush_every_n_logs=10,
+    ):
+        self.model_path = model_path
+        self.default_class = default_class
+        self.img_size = img_size
+        self.confidence = confidence
+        self.iou = iou
+        self.cam_width = cam_width
+        self.cam_height = cam_height
+        self.cam_fps_target = cam_fps_target
+        self.max_detections = max_detections
+        self.flush_every_n_logs = flush_every_n_logs
 
-# Performance knobs (trade speed vs accuracy)
-IMG_SIZE = 320
-CONFIDENCE = 0.5
-IOU = 0.5
-CAM_WIDTH = 640
-CAM_HEIGHT = 480
-CAM_FPS_TARGET = 60
-MAX_DETECTIONS = 1
-FLUSH_EVERY_N_LOGS = 10
-
-USE_GPU = torch.cuda.is_available()
-DEVICE = 0 if USE_GPU else "cpu"
-USE_HALF = USE_GPU
-
-model = YOLO(MODEL_PATH)
-stabilizer = Stabilizer(enter_point=2.50, confirm_threshold=6.0, exit_point=1.5)
-current_stable_class = None
-logger = Logger(model_path=MODEL_PATH, logs_directory="logs", max_records=500)
-
-# Warm-up to reduce first-frame latency spikes
-_warmup_frame = np.zeros((CAM_HEIGHT, CAM_WIDTH, 3), dtype=np.uint8)
-model.predict(
-    _warmup_frame,
-    conf=CONFIDENCE,
-    iou=IOU,
-    imgsz=IMG_SIZE,
-    max_det=MAX_DETECTIONS,
-    device=DEVICE,
-    half=USE_HALF,
-    verbose=False,
-)
-
-# 2. OPEN THE WEBCAM
-cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAM_WIDTH)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAM_HEIGHT)
-cap.set(cv2.CAP_PROP_FPS, CAM_FPS_TARGET)
-cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-
-print("Sharingan Activated! Looking for Jutsus... Press 'q' to quit.")
-print(f"Logging predictions to: {logger.log_file_path}")
-print(f"Device: {'GPU' if USE_GPU else 'CPU'} | imgsz={IMG_SIZE} | cam={CAM_WIDTH}x{CAM_HEIGHT}")
-actual_cam_fps = cap.get(cv2.CAP_PROP_FPS)
-print(f"Camera target FPS: {CAM_FPS_TARGET} | Camera reported FPS: {actual_cam_fps:.2f}")
-
-prev_time = time.perf_counter()
-fps = 0.0
-frame_idx = 0
-pending_logs = 0
-capture_fps = 0.0
-last_fps_print = time.perf_counter()
-
-grabber = LatestFrameGrabber(cap)
-grabber.start()
-
-while cap.isOpened():
-    frame, _frame_time, _threaded_capture_fps = grabber.read_latest()
-    if frame is None:
-        time.sleep(0.001)
-        continue
-
-    capture_fps = _threaded_capture_fps
-
-    frame_idx += 1
-    
-    frame = cv2.flip(frame, 1) 
-    
-    # 3. RUN THE FRAME THROUGH YOLO
-    results = model.predict(
-        frame,
-        stream=False,
-        conf=CONFIDENCE,
-        iou=IOU,
-        agnostic_nms=True,
-        imgsz=IMG_SIZE,
-        max_det=MAX_DETECTIONS,
-        device=DEVICE,
-        half=USE_HALF,
-        verbose=False,
-    )
-
-    # 4. DRAW THE PREDICTIONS
-    annotated_frame = frame
-    detected_class = None
-    best_confidence = -1.0
-    best_box_xyxy = None
-
-    result = results[0] if results else None
-
-    if result is not None and result.boxes is not None and len(result.boxes) > 0:
-        names = result.names if hasattr(result, "names") else model.names
-        for box in result.boxes:
-            class_id = int(box.cls[0].item())
-            if isinstance(names, dict):
-                class_name = names.get(class_id, str(class_id))
-            else:
-                class_name = names[class_id] if class_id < len(names) else str(class_id)
-
-            confidence = float(box.conf[0].item()) if box.conf is not None else 0.0
-
-            if confidence > best_confidence:
-                best_confidence = confidence
-                detected_class = class_name
-                best_box_xyxy = box.xyxy[0].tolist()
-
-    if best_box_xyxy is not None and detected_class is not None:
-        x1, y1, x2, y2 = map(int, best_box_xyxy)
-        cv2.rectangle(annotated_frame, (x1, y1), (x2, y2), (0, 200, 255), 2)
-        cv2.putText(
-            annotated_frame,
-            f"{detected_class} {best_confidence:.2f}",
-            (x1, max(20, y1 - 10)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            (0, 200, 255),
-            2,
-            cv2.LINE_AA,
+        self.detector = Detector(
+            model_path=self.model_path,
+            img_size=self.img_size,
+            confidence=self.confidence,
+            iou=self.iou,
+            max_detections=self.max_detections,
+            use_gpu=True,
+            warmup_height=self.cam_height,
+            warmup_width=self.cam_width,
         )
+        self.use_gpu = self.detector.use_gpu
+        self.annotator = FrameAnnotator()
+        self.animator = Animator(width=self.cam_width, height=self.cam_height)
+        self.stabilizer = Stabilizer(enter_point=2.50, confirm_threshold=12.0, exit_point=1.5, queue_size=24)
+        self.chainer = Chainer()
+        self.logger = Logger(model_path=self.model_path, logs_directory="logs", max_records=500)
 
-    if detected_class is not None:
-        did_log = logger.log_prediction(detected_class, fps, confidence=best_confidence)
-        if did_log:
-            pending_logs += 1
+        self.current_stable_class = None
+        self.current_sequence = []
+        self.fps = 0.0
+        self.pending_logs = 0
+        self.capture_fps = 0.0
+        self.prev_time = time.perf_counter()
+        self.last_fps_print = time.perf_counter()
 
-    detected_confidence = best_confidence if detected_class is not None else 0.0
-    stable_class = stabilizer.update(detected_class, detected_confidence)
-#    if stable_class is not None:
-    current_stable_class = stable_class
-    print(f"Stabilized class: {current_stable_class}")
+        self.cap = None
+        self.grabber = None
 
-    if pending_logs >= FLUSH_EVERY_N_LOGS:
-        logger.flush()
-        pending_logs = 0
+    def _open_camera(self):
+        self.cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cam_width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cam_height)
+        self.cap.set(cv2.CAP_PROP_FPS, self.cam_fps_target)
+        self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
-    # 5. CALCULATE AND DRAW FPS
-    current_time = time.perf_counter()
-    delta = current_time - prev_time
-    prev_time = current_time
+        self.grabber = LatestFrameGrabber(self.cap)
+        self.grabber.start()
 
-    if delta > 0:
-        instant_fps = 1.0 / delta
-        fps = (0.9 * fps) + (0.1 * instant_fps) if fps > 0 else instant_fps
+    def _update_loop_fps(self):
+        current_time = time.perf_counter()
+        delta = current_time - self.prev_time
+        self.prev_time = current_time
 
-    cv2.putText(
-        annotated_frame,
-        f"Loop FPS: {fps:.1f}",
-        (10, 30),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.9,
-        (0, 255, 0),
-        2,
-        cv2.LINE_AA,
-    )
+        if delta > 0:
+            instant_fps = 1.0 / delta
+            self.fps = (0.9 * self.fps) + (0.1 * instant_fps) if self.fps > 0 else instant_fps
 
-    cv2.putText(
-        annotated_frame,
-        f"Capture FPS: {capture_fps:.1f}",
-        (10, 60),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (255, 200, 0),
-        2,
-        cv2.LINE_AA,
-    )
+        now_print = time.perf_counter()
+        if now_print - self.last_fps_print >= 1.0:
+            #print(f"Loop FPS={self.fps:.1f} | Capture FPS={self.capture_fps:.1f}")
+            self.last_fps_print = now_print
 
-    stable_text = current_stable_class if current_stable_class is not None else "None"
-    cv2.putText(
-        annotated_frame,
-        f"Stable: {stable_text}",
-        (10, 95),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.8,
-        (0, 255, 255),
-        2,
-        cv2.LINE_AA,
-    )
+    def _cleanup(self):
+        if self.grabber is not None:
+            self.grabber.stop()
+        if self.cap is not None:
+            self.cap.release()
+        self.animator.close()
+        cv2.destroyAllWindows()
+        self.logger.flush()
+        self.logger.close()
 
-    now_print = time.perf_counter()
-    if now_print - last_fps_print >= 1.0:
-        print(f"Loop FPS={fps:.1f} | Capture FPS={capture_fps:.1f}")
-        last_fps_print = now_print
+    def _print_summary(self):
+        precision, correct_predictions, total_predictions = self.logger.calculate_precision(self.default_class)
+        summary_file_path, decision = self.logger.save_run_decision(self.default_class, precision)
 
-    # 6. SHOW THE VIDEO ON SCREEN
-    cv2.imshow('Jutsu Detector - YOLOv8', annotated_frame)
+        print(f"Default class: {self.default_class}")
+        print(f"Correct predictions: {correct_predictions}/{total_predictions}")
+        print(f"Precision: {precision:.4f}")
+        print(f"Decision: {decision}")
+        print(f"Saved summary to: {summary_file_path}")
+        print(f"Current stable class at end of run: {self.current_stable_class}")
 
-    # Press 'q' to close safely
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+    def run(self):
+        self._open_camera()
 
-grabber.stop()
-cap.release()
-cv2.destroyAllWindows()
-logger.flush()
-logger.close()
+        print("Sharingan Activated! Looking for Jutsus... Press 'q' to quit.")
+        print(f"Logging predictions to: {self.logger.log_file_path}")
+        print(
+            f"Device: {'GPU' if self.use_gpu else 'CPU'} | "
+            f"imgsz={self.img_size} | cam={self.cam_width}x{self.cam_height}"
+        )
+        actual_cam_fps = self.cap.get(cv2.CAP_PROP_FPS)
+        print(f"Camera target FPS: {self.cam_fps_target} | Camera reported FPS: {actual_cam_fps:.2f}")
 
-precision, correct_predictions, total_predictions = logger.calculate_precision(CLASS)
-summary_file_path, decision = logger.save_run_decision(CLASS, precision)
-print(f"Default class: {CLASS}")
-print(f"Correct predictions: {correct_predictions}/{total_predictions}")
-print(f"Precision: {precision:.4f}")
-print(f"Decision: {decision}")
-print(f"Saved summary to: {summary_file_path}")
-print(f"Current stable class at end of run: {current_stable_class}")
+        try:
+            while self.cap.isOpened():
+                frame, _frame_time, threaded_capture_fps = self.grabber.read_latest()
+                if frame is None:
+                    time.sleep(0.001)
+                    continue
+
+                self.capture_fps = threaded_capture_fps
+                frame = cv2.flip(frame, 1)
+
+                detection_info = self.detector.predict(frame)
+                detected_class = detection_info["class_name"]
+                best_confidence = detection_info["confidence"]
+                self.annotator.draw_detection(frame, detection_info)
+
+                if detected_class is not None:
+                    did_log = self.logger.log_prediction(detected_class, self.fps, confidence=best_confidence)
+                    if did_log:
+                        self.pending_logs += 1
+
+                detected_confidence = best_confidence if detected_class is not None else 0.0
+                stable_class = self.stabilizer.update(detected_class, detected_confidence)
+                self.current_stable_class = stable_class
+                chain_info = self.chainer.update(self.current_stable_class)
+                self.current_sequence = chain_info["active_sequence"]
+
+                if chain_info["completed_sequence"] is not None:
+                    print(f"Completed sequence: {chain_info['completed_sequence']}")
+
+                if chain_info["is_chain_completed"] and chain_info["completed_chain_name"] is not None:
+                    completed_chain_name = chain_info["completed_chain_name"]
+                    print(f"Chain completed: {completed_chain_name}")
+                    self.animator.play(completed_chain_name)
+                    self.chainer.clear()
+                    self.current_sequence = []
+
+                if self.pending_logs >= self.flush_every_n_logs:
+                    self.logger.flush()
+                    self.pending_logs = 0
+
+                self._update_loop_fps()
+                self.annotator.draw_stats(
+                    frame,
+                    loop_fps=self.fps,
+                    capture_fps=self.capture_fps,
+                    stable_class=self.current_stable_class,
+                )
+
+                cv2.imshow('Jutsu Detector - YOLOv8', frame)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
+        finally:
+            self._cleanup()
+            self._print_summary()
+
+
+if __name__ == "__main__":
+    detector = LiveDetector()
+    detector.run()
