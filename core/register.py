@@ -5,7 +5,10 @@ import cv2
 
 class Register:
     def __init__(self, image_directory="images", file_prefix="no_class", cooldown_seconds=2.0):
-        self.image_dir = Path(image_directory)
+        image_dir = Path(image_directory)
+        if not image_dir.is_absolute():
+            image_dir = Path(__file__).resolve().parents[1] / image_dir
+        self.image_dir = image_dir
         self.image_dir.mkdir(exist_ok=True)
         self.file_prefix = file_prefix
         self.cooldown_seconds = cooldown_seconds

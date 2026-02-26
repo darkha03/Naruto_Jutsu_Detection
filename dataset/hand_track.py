@@ -2,14 +2,20 @@ import cv2
 import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from utils import draw_landmarks_on_image
 import csv
-import os
+import sys
+from pathlib import Path
 from time import sleep
 
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from dataset.utils import draw_landmarks_on_image
+
 # --- 1. SETUP THE TWO-HANDED CSV FILE ---
-csv_file = "jutsu_dataset_hands.csv" 
-if not os.path.exists(csv_file):
+csv_file = ROOT_DIR / "dataset" / "jutsu_dataset_hands.csv"
+if not csv_file.exists():
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
         # Create headers for Hand 1 and Hand 2
@@ -18,10 +24,10 @@ if not os.path.exists(csv_file):
         writer.writerow(h1_headers + h2_headers + ['label', 'image_file'])
 
 # Create images folder if it doesn't exist
-if not os.path.exists('images'):
-    os.makedirs('images')
+images_dir = ROOT_DIR / "images"
+images_dir.mkdir(exist_ok=True)
 
-base_options = python.BaseOptions(model_asset_path='hand_landmarker.task')
+base_options = python.BaseOptions(model_asset_path=str(ROOT_DIR / "models" / "hand_landmarker.task"))
 options = vision.HandLandmarkerOptions(base_options=base_options, num_hands=2)
 detector = vision.HandLandmarker.create_from_options(options)
 
@@ -97,12 +103,12 @@ while cap.isOpened():
                 while len(hand_data) < 126:  # 21 joints * 3 coordinates * 2 hands
                     hand_data.append(0.0)
                 label = "Snake"
-                img_filename = f"images/{label}_{img_counter}.jpg"
-                cv2.imwrite(img_filename, frame)  # Save original frame without landmarks
+                img_path = images_dir / f"{label}_{img_counter}.jpg"
+                cv2.imwrite(str(img_path), frame)  # Save original frame without landmarks
                 with open(csv_file, mode='a', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow(hand_data + [label, img_filename])
-                print(f"Data saved for {img_filename} with label '{label}'")
+                    writer.writerow(hand_data + [label, str(img_path.relative_to(ROOT_DIR))])
+                print(f"Data saved for {img_path} with label '{label}'")
                 img_counter += 1
             else:
                 print("No hands detected. Please try again.")

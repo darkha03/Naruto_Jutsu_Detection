@@ -10,7 +10,10 @@ class Animator:
         self.height = int(height)
         self.fps = max(1, int(fps))
         self.frame_delay_ms = max(1, int(1000 / self.fps))
-        self.animations_dir = Path(animations_dir)
+        animations_path = Path(animations_dir)
+        if not animations_path.is_absolute():
+            animations_path = Path(__file__).resolve().parents[1] / animations_path
+        self.animations_dir = animations_path
 
         self.video_map = {
             "Fireball": "fireball.mp4",

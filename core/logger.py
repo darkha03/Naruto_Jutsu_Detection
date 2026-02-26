@@ -6,8 +6,11 @@ from pathlib import Path
 class Logger:
     def __init__(self, model_path, logs_directory="logs", max_records=20):
         self.model_path = Path(model_path)
-        self.logs_dir = Path(logs_directory)
-        self.logs_dir.mkdir(exist_ok=True)
+        logs_path = Path(logs_directory)
+        if not logs_path.is_absolute():
+            logs_path = Path(__file__).resolve().parents[1] / logs_path
+        self.logs_dir = logs_path
+        self.logs_dir.mkdir(parents=True, exist_ok=True)
 
         run_started_at = datetime.now()
         self.log_file_path = self.logs_dir / (

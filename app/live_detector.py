@@ -1,17 +1,24 @@
 import cv2
+import sys
 import time
-from animator import Animator
-from chainer import Chainer
-from detector import Detector
-from frame_annotator import FrameAnnotator
-from stabilizer import Stabilizer
-from logger import Logger
-from frame_grabber import LatestFrameGrabber
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from core.animator import Animator
+from core.chainer import Chainer
+from core.detector import Detector
+from core.frame_annotator import FrameAnnotator
+from core.stabilizer import Stabilizer
+from core.logger import Logger
+from core.frame_grabber import LatestFrameGrabber
 
 class LiveDetector:
     def __init__(
         self,
-        model_path='best.engine',
+        model_path=None,
         default_class="Tiger",
         img_size=640,
         confidence=0.5,
@@ -24,7 +31,10 @@ class LiveDetector:
         flush_every_n_logs=10,
         infer_on_new_frame_only=True,
     ):
-        self.model_path = model_path
+        default_model_path = ROOT_DIR / "models" / "bests.engine"
+        fallback_model_path = ROOT_DIR / "models" / "bests.pt"
+
+        self.model_path = str(Path(model_path)) if model_path else str(default_model_path)
         self.default_class = default_class
         self.img_size = img_size
         self.confidence = confidence
@@ -47,14 +57,18 @@ class LiveDetector:
             use_gpu=True,
             warmup_height=self.cam_height,
             warmup_width=self.cam_width,
-            fallback_model_path="bests.pt",
+            fallback_model_path=str(fallback_model_path),
         )
         self.use_gpu = self.detector.use_gpu
         self.annotator = FrameAnnotator()
-        self.animator = Animator(width=self.cam_width, height=self.cam_height)
+        self.animator = Animator(
+            width=self.cam_width,
+            height=self.cam_height,
+            animations_dir=str(ROOT_DIR / "animations"),
+        )
         self.stabilizer = Stabilizer(enter_point=3.0, confirm_threshold=8.0, exit_point=2.0, queue_size=16)
         self.chainer = Chainer()
-        self.logger = Logger(model_path=self.model_path, logs_directory="logs", max_records=500)
+        self.logger = Logger(model_path=self.model_path, logs_directory=str(ROOT_DIR / "logs"), max_records=500)
 
         self.current_stable_class = None
         self.current_sequence = []

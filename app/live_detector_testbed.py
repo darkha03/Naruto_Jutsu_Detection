@@ -2,12 +2,19 @@ import cv2
 import time
 import numpy as np
 import torch
+import sys
+from pathlib import Path
 from ultralytics import YOLO
-from stabilizer import Stabilizer
-from logger import Logger
-from frame_grabber import LatestFrameGrabber
 
-MODEL_PATH = "bests.engine"
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
+from core.stabilizer import Stabilizer
+from core.logger import Logger
+from core.frame_grabber import LatestFrameGrabber
+
+MODEL_PATH = str(ROOT_DIR / "models" / "bests.engine")
 CLASS = "Tiger"
 
 IMG_SIZE = 320
@@ -34,7 +41,7 @@ def main():
     model = YOLO(MODEL_PATH)
     stabilizer = Stabilizer()
     current_stable_class = None
-    logger = Logger(model_path=MODEL_PATH, logs_directory="logs", max_records=500)
+    logger = Logger(model_path=MODEL_PATH, logs_directory=str(ROOT_DIR / "logs"), max_records=500)
 
     warmup = np.zeros((CAM_HEIGHT, CAM_WIDTH, 3), dtype=np.uint8)
     model.predict(
