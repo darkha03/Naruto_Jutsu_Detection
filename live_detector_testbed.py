@@ -68,6 +68,7 @@ def main():
     infer_fps = 0.0
     capture_fps = 0.0
     frame_idx = 0
+    last_logged_frame_time = None
 
     try:
         while cap.isOpened():
@@ -160,7 +161,17 @@ def main():
             cv2.putText(annotated, f"Stable: {current_stable_class if current_stable_class else 'None'}", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
 
             if detected_class is not None:
-                logger.log_prediction(detected_class, loop_fps)
+                is_new_frame = (last_logged_frame_time is None) or (frame_time != last_logged_frame_time)
+                if is_new_frame:
+                    last_logged_frame_time = frame_time
+
+                logger.log_prediction(
+                    detected_class,
+                    loop_fps,
+                    confidence=best_confidence,
+                    frame_time=frame_time,
+                    is_new_frame=is_new_frame,
+                )
 
             if not HEADLESS:
                 if frame_idx % DISPLAY_EVERY_N_FRAMES == 0:

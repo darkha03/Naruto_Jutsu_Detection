@@ -16,20 +16,25 @@ class Logger:
 
         self.log_file = open(self.log_file_path, mode="w", newline="", encoding="utf-8")
         self.log_writer = csv.writer(self.log_file)
-        self.log_writer.writerow(["class_name", "timestamp", "fps", "confidence"])
+        self.log_writer.writerow(["class_name", "timestamp", "fps", "confidence", "frame_time", "is_new_frame"])
 
         self.max_records = max_records
         self.logged_records = 0
 
-    def log_prediction(self, class_name, fps, confidence=0.0):
+    def log_prediction(self, class_name, fps, confidence=0.0, frame_time=None, is_new_frame=None):
         if self.logged_records >= self.max_records:
             return False
+
+        normalized_frame_time = "" if frame_time is None else round(float(frame_time), 6)
+        normalized_is_new_frame = "" if is_new_frame is None else int(bool(is_new_frame))
 
         self.log_writer.writerow([
             class_name,
             datetime.now().isoformat(timespec="milliseconds"),
             round(fps, 2),
-            round(confidence, 2)
+            round(confidence, 2),
+            normalized_frame_time,
+            normalized_is_new_frame,
         ])
         self.logged_records += 1
         return True

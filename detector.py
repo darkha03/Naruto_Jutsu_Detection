@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 from ultralytics import YOLO
+from pathlib import Path
 
 
 class Detector:
@@ -14,8 +15,10 @@ class Detector:
         use_gpu=True,
         warmup_height=480,
         warmup_width=640,
+        fallback_model_path=None,
     ):
         self.model_path = model_path
+        self.fallback_model_path = fallback_model_path
         self.img_size = img_size
         self.confidence = confidence
         self.iou = iou
@@ -24,9 +27,49 @@ class Detector:
         self.use_gpu = use_gpu and torch.cuda.is_available()
         self.device = 0 if self.use_gpu else "cpu"
         self.use_half = self.use_gpu
+        self.active_model_path = None
 
-        self.model = YOLO(self.model_path)
-        self._warmup(warmup_height=warmup_height, warmup_width=warmup_width)
+        self.model = self._load_model_with_fallback(
+            warmup_height=warmup_height,
+            warmup_width=warmup_width,
+        )
+
+    def _candidate_model_paths(self):
+        candidates = [self.model_path]
+
+        if self.fallback_model_path:
+            candidates.append(self.fallback_model_path)
+        else:
+            primary = Path(self.model_path)
+            if primary.suffix.lower() == ".engine":
+                auto_pt = str(primary.with_suffix(".pt"))
+                if auto_pt != self.model_path:
+                    candidates.append(auto_pt)
+
+        deduped = []
+        for path in candidates:
+            if path not in deduped:
+                deduped.append(path)
+        return deduped
+
+    def _load_model_with_fallback(self, warmup_height, warmup_width):
+        errors = []
+
+        for candidate_path in self._candidate_model_paths():
+            try:
+                candidate_model = YOLO(candidate_path)
+                self.model = candidate_model
+                self._warmup(warmup_height=warmup_height, warmup_width=warmup_width)
+                self.active_model_path = candidate_path
+
+                if candidate_path != self.model_path:
+                    print(f"Primary model failed, using fallback model: {candidate_path}")
+                return candidate_model
+            except Exception as exc:
+                errors.append(f"{candidate_path}: {exc}")
+
+        joined_errors = " | ".join(errors) if errors else "No candidate models were provided."
+        raise RuntimeError(f"Failed to load any model candidate. Details: {joined_errors}")
 
     def _warmup(self, warmup_height, warmup_width):
         warmup_frame = np.zeros((warmup_height, warmup_width, 3), dtype=np.uint8)

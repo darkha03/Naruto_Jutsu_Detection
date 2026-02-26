@@ -11,16 +11,18 @@ from frame_grabber import LatestFrameGrabber
 class LiveDetector:
     def __init__(
         self,
-        model_path='bests.engine',
+        model_path='best.engine',
         default_class="Tiger",
-        img_size=320,
+        img_size=640,
         confidence=0.5,
         iou=0.5,
         cam_width=640,
         cam_height=480,
         cam_fps_target=60,
+        loop_fps_target=60,
         max_detections=1,
         flush_every_n_logs=10,
+        infer_on_new_frame_only=True,
     ):
         self.model_path = model_path
         self.default_class = default_class
@@ -30,8 +32,11 @@ class LiveDetector:
         self.cam_width = cam_width
         self.cam_height = cam_height
         self.cam_fps_target = cam_fps_target
+        self.loop_fps_target = loop_fps_target
+        self.loop_frame_budget = (1.0 / loop_fps_target) if loop_fps_target and loop_fps_target > 0 else 0.0
         self.max_detections = max_detections
         self.flush_every_n_logs = flush_every_n_logs
+        self.infer_on_new_frame_only = infer_on_new_frame_only
 
         self.detector = Detector(
             model_path=self.model_path,
@@ -42,11 +47,12 @@ class LiveDetector:
             use_gpu=True,
             warmup_height=self.cam_height,
             warmup_width=self.cam_width,
+            fallback_model_path="bests.pt",
         )
         self.use_gpu = self.detector.use_gpu
         self.annotator = FrameAnnotator()
         self.animator = Animator(width=self.cam_width, height=self.cam_height)
-        self.stabilizer = Stabilizer(enter_point=2.50, confirm_threshold=12.0, exit_point=1.5, queue_size=24)
+        self.stabilizer = Stabilizer(enter_point=3.0, confirm_threshold=8.0, exit_point=2.0, queue_size=16)
         self.chainer = Chainer()
         self.logger = Logger(model_path=self.model_path, logs_directory="logs", max_records=500)
 
@@ -57,6 +63,15 @@ class LiveDetector:
         self.capture_fps = 0.0
         self.prev_time = time.perf_counter()
         self.last_fps_print = time.perf_counter()
+        self.last_seen_frame_time = None
+        self.last_inferred_frame_time = None
+        self.last_detection_info = {
+            "has_detection": False,
+            "class_name": None,
+            "confidence": 0.0,
+            "box_xyxy": None,
+            "raw_result": None,
+        }
 
         self.cap = None
         self.grabber = None
@@ -115,28 +130,48 @@ class LiveDetector:
             f"Device: {'GPU' if self.use_gpu else 'CPU'} | "
             f"imgsz={self.img_size} | cam={self.cam_width}x{self.cam_height}"
         )
+        print(f"Loop FPS target: {self.loop_fps_target}")
+        print(f"Model in use: {self.detector.active_model_path}")
         actual_cam_fps = self.cap.get(cv2.CAP_PROP_FPS)
         print(f"Camera target FPS: {self.cam_fps_target} | Camera reported FPS: {actual_cam_fps:.2f}")
 
         try:
             while self.cap.isOpened():
-                frame, _frame_time, threaded_capture_fps = self.grabber.read_latest()
+                loop_start = time.perf_counter()
+
+                frame, frame_time, threaded_capture_fps = self.grabber.read_latest()
                 if frame is None:
                     time.sleep(0.001)
                     continue
 
+                is_new_frame = (self.last_seen_frame_time is None) or (frame_time != self.last_seen_frame_time)
+                if is_new_frame:
+                    self.last_seen_frame_time = frame_time
+
                 self.capture_fps = threaded_capture_fps
                 frame = cv2.flip(frame, 1)
 
-                detection_info = self.detector.predict(frame)
+                should_infer = (not self.infer_on_new_frame_only) or is_new_frame
+                if should_infer:
+                    detection_info = self.detector.predict(frame)
+                    self.last_detection_info = detection_info
+                    self.last_inferred_frame_time = frame_time
+                else:
+                    detection_info = self.last_detection_info
+
                 detected_class = detection_info["class_name"]
                 best_confidence = detection_info["confidence"]
                 self.annotator.draw_detection(frame, detection_info)
 
-                if detected_class is not None:
-                    did_log = self.logger.log_prediction(detected_class, self.fps, confidence=best_confidence)
-                    if did_log:
-                        self.pending_logs += 1
+                did_log = self.logger.log_prediction(
+                    detected_class,
+                    self.fps,
+                    confidence=best_confidence,
+                    frame_time=self.last_inferred_frame_time,
+                    is_new_frame=is_new_frame,
+                )
+                if did_log:
+                    self.pending_logs += 1
 
                 detected_confidence = best_confidence if detected_class is not None else 0.0
                 stable_class = self.stabilizer.update(detected_class, detected_confidence)
@@ -169,6 +204,12 @@ class LiveDetector:
                 cv2.imshow('Jutsu Detector - YOLOv8', frame)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
+
+                if self.loop_frame_budget > 0:
+                    elapsed = time.perf_counter() - loop_start
+                    remaining = self.loop_frame_budget - elapsed
+                    if remaining > 0:
+                        time.sleep(remaining)
         finally:
             self._cleanup()
             self._print_summary()
