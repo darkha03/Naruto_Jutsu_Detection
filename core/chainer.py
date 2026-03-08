@@ -6,13 +6,13 @@ jutsu_chains = {
 
 confusion_matrix = {
     "Tiger": ["Tiger", "Ram"],
-    "Monkey": ["Monkey", "Hare", "Dragon"],
+    "Monkey": ["Monkey"],
     "Dragon": ["Dragon"],
     "Snake":  ["Snake"],
     "Horse": ["Horse", "Bird"],
     "Ox": ["Ox"],
     "Hare": ["Hare"],
-    "Bird": ["Bird"],
+    "Bird": ["Bird", "Horse"],
     "Boar": ["Boar"],
     "Rat": ["Rat"],
     "Ram": ["Ram", "Rat"],

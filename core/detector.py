@@ -73,19 +73,10 @@ class Detector:
 
     def _warmup(self, warmup_height, warmup_width):
         warmup_frame = np.zeros((warmup_height, warmup_width, 3), dtype=np.uint8)
-        self.model.predict(
-            warmup_frame,
-            conf=self.confidence,
-            iou=self.iou,
-            imgsz=self.img_size,
-            max_det=self.max_detections,
-            device=self.device,
-            half=self.use_half,
-            verbose=False,
-        )
+        self._predict_raw(warmup_frame)
 
-    def predict(self, frame):
-        results = self.model.predict(
+    def _predict_raw(self, frame):
+        return self.model.predict(
             frame,
             stream=False,
             conf=self.confidence,
@@ -97,6 +88,45 @@ class Detector:
             half=self.use_half,
             verbose=False,
         )
+
+    @staticmethod
+    def _extract_speed_ms(result):
+        if result is None:
+            return 0.0, 0.0, 0.0
+        speed = result.speed if hasattr(result, "speed") and result.speed is not None else {}
+        pre_ms = float(speed.get("preprocess", 0.0))
+        inf_ms = float(speed.get("inference", 0.0))
+        post_ms = float(speed.get("postprocess", 0.0))
+        return pre_ms, inf_ms, post_ms
+
+    def detect_best_box(self, frame):
+        results = self._predict_raw(frame)
+        result = results[0] if results else None
+
+        best_confidence = 0.0
+        best_box_xyxy = None
+
+        if result is not None and result.boxes is not None and len(result.boxes) > 0:
+            for box in result.boxes:
+                confidence = float(box.conf[0].item()) if box.conf is not None else 0.0
+                if confidence > best_confidence:
+                    best_confidence = confidence
+                    best_box_xyxy = box.xyxy[0].tolist()
+
+        pre_ms, inf_ms, post_ms = self._extract_speed_ms(result)
+        return {
+            "has_detection": best_box_xyxy is not None,
+            "confidence": best_confidence,
+            "box_xyxy": best_box_xyxy,
+            "raw_result": result,
+            "pre_ms": pre_ms,
+            "inf_ms": inf_ms,
+            "post_ms": post_ms,
+            "detect_ms": pre_ms + inf_ms + post_ms,
+        }
+
+    def predict(self, frame):
+        results = self._predict_raw(frame)
 
         detected_class = None
         best_confidence = -1.0

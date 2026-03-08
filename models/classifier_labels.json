@@ -1,0 +1,31 @@
+{
+  "class_to_idx": {
+    "Bird": 0,
+    "Boar": 1,
+    "Dog": 2,
+    "Dragon": 3,
+    "Hare": 4,
+    "Horse": 5,
+    "Monkey": 6,
+    "Ox": 7,
+    "Ram": 8,
+    "Rat": 9,
+    "Snake": 10,
+    "Tiger": 11
+  },
+  "classes": [
+    "Bird",
+    "Boar",
+    "Dog",
+    "Dragon",
+    "Hare",
+    "Horse",
+    "Monkey",
+    "Ox",
+    "Ram",
+    "Rat",
+    "Snake",
+    "Tiger"
+  ],
+  "include_background": false
+}

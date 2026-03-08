@@ -1,6 +1,6 @@
 # 🌀 Naruto Jutsu Detection App
 
-A real-time hand sign recognition system that combines **machine learning (ML)** and an **intelligent sequence-matching engine** to detect Naruto jutsu from live camera input.
+A real-time hand sign recognition system that uses a **two-stage vision pipeline** and an **intelligent sequence-matching engine** to detect Naruto jutsu from live camera input.
 
 ---
 
@@ -8,8 +8,9 @@ A real-time hand sign recognition system that combines **machine learning (ML)**
 
 This project focuses on building a complete real-time recognition pipeline:
 
-1. **Machine Learning model** to detect individual hand signs from camera input
-2. **Stateful matching engine** to validate and recognize full jutsu sequences
+1. **YOLO detector** to localize hand regions in each frame
+2. **MobileNetV3-Small classifier** to classify the detected hand sign from the cropped hand region
+3. **Stateful matching engine** to validate and recognize full jutsu sequences
 
 Instead of relying on strict exact matching, the system is designed to:
 
@@ -63,6 +64,12 @@ python -m dataset.batch_process
 python -m tools.export
 ```
 
+### Classifier Export Tool
+
+```bash
+python -m tools.export_classifier_tensorrt
+```
+
 ---
 
 ## 📁 Current Project Layout
@@ -71,7 +78,7 @@ python -m tools.export
 * `core/` → reusable detection, stabilization, chaining, logging, animation modules
 * `dataset/` → dataset collection/preprocessing scripts and CSV
 * `tools/` → utility scripts (e.g., export)
-* `models/` → trained model files and `hand_landmarker.task`
+* `models/` → detector + classifier files (`bestn.engine`, `bests.pt`, `classifier.pt`, `classifier_labels.json`, etc.)
 * `animations/` → jutsu animation videos
 * `logs/` → prediction logs and summary decisions
 * `images/` → captured frames/dataset images
@@ -87,23 +94,23 @@ python -m tools.export
 ---
 
 
-## 🤖 Hand Sign Detection Model (Machine Learning)
+## 🤖 Two-Stage Vision Pipeline
 
-The first component of the system is a trained classification model capable of recognizing individual Naruto hand signs.
+The vision system is split into two ML components with clear responsibilities:
 
-### Model Development Process
+### 1) Hand Detection (YOLO)
 
-* Collected and labeled hand sign image data
-* Applied preprocessing (resizing, normalization)
-* Trained a classification model to recognize each sign
-* Evaluated accuracy and reduced misclassification through tuning
+* Runs on full camera frames
+* Detects the hand bounding box
+* Provides the ROI (region of interest) for classification
 
-The model outputs predicted signs in real time. These predictions are then passed to the matching engine.
+### 2) Hand Sign Classification (MobileNetV3-Small)
 
-This modular design separates:
+* Takes cropped hand ROI from the detector output
+* Predicts the hand-sign class with confidence
+* Feeds predictions into stabilizer + sequence matcher
 
-* **Per-frame visual recognition (ML problem)**
-* **Sequence validation and logic (algorithmic problem)**
+This design improves modularity and makes it easier to independently tune detection vs classification.
 
 ---
 
@@ -143,11 +150,11 @@ This allows multiple potential matches to coexist while handling noisy ML output
 
 ## 🔄 How It Works (High Level)
 
-1. Camera captures hand sign
-2. ML model predicts the sign
-3. Prediction is added to a temporary buffer
-4. Candidate jutsu are updated
-5. Invalid sequences are removed progressively
+1. Camera captures frame
+2. YOLO detects hand bounding box
+3. Detected hand crop is sent to MobileNetV3-Small classifier
+4. Predicted sign is stabilized over time
+5. Candidate jutsu are updated and pruned
 6. When a sequence completes successfully → Jutsu detected 🎯
 
 ---
@@ -196,9 +203,10 @@ It showcases practical ML integration, system design thinking, and real-time pro
 	* Close other apps using the camera.
 	* Try changing camera index in code (`cv2.VideoCapture(0, ...)` → `1` or `2`).
 
-* **Model file errors (`.engine`, `.pt`, or `.task` not found)**
+* **Model file errors (`.engine`, `.pt`, `.json`, or `.task` not found)**
 	* Ensure files exist under `models/`:
-		* `bests.engine` or fallback `bests.pt`
+		* detector: `bestn.engine` (or fallback `bests.pt`)
+		* classifier: `classifier.pt` and `classifier_labels.json`
 		* `hand_landmarker.task`
 
 * **Slow inference / low FPS**
