@@ -23,52 +23,11 @@ The goal is to simulate a realistic recognition system where predictions are noi
 
 ---
 
-## ⚙️ Setup & Run
+## 🎬 Demo
 
-### Requirements
+Demo video:
 
-* Python 3.10+
-* Webcam
-* Optional: NVIDIA GPU (for faster inference)
-
-### Install
-
-```bash
-python -m venv venv
-venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### Run Main App
-
-```bash
-python -m app.live_detector
-```
-
-### Run Testbed
-
-```bash
-python -m app.live_detector_testbed
-```
-
-### Dataset Tools
-
-```bash
-python -m dataset.hand_track
-python -m dataset.batch_process
-```
-
-### Model Export Tool
-
-```bash
-python -m tools.export
-```
-
-### Classifier Export Tool
-
-```bash
-python -m tools.export_classifier_tensorrt
-```
+* https://github.com/user-attachments/assets/ee728095-e960-4cea-aca0-bf66d7e8e223
 
 ---
 
@@ -82,14 +41,6 @@ python -m tools.export_classifier_tensorrt
 * `animations/` → jutsu animation videos
 * `logs/` → prediction logs and summary decisions
 * `images/` → captured frames/dataset images
-
----
-
-## 📤 Runtime Outputs
-
-* Prediction logs are written to `logs/predictions_*.csv`
-* Run-level summaries are written to `logs/model_decisions.csv`
-* Missing/unknown class snapshots are written to `images/` (via `Register`)
 
 ---
 
@@ -189,6 +140,64 @@ This project demonstrates the ability to:
 * Build modular architectures combining AI and classical software engineering
 
 It showcases practical ML integration, system design thinking, and real-time processing skills relevant to AI-driven applications.
+
+---
+
+## ⚙️ Setup & Run
+
+### Requirements
+
+* Python 3.10+
+* Webcam
+* Optional: NVIDIA GPU (for faster inference)
+
+### Install
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### Run Main App
+
+```bash
+python -m app.live_detector
+```
+
+### Run Testbed
+
+```bash
+python -m app.live_detector_testbed
+```
+
+### Dataset Tools
+
+```bash
+python -m dataset.hand_track
+python -m dataset.batch_process
+```
+
+### Model Export Tool
+
+```bash
+python -m tools.export
+```
+
+### Classifier Export Tool
+
+```bash
+python -m tools.export_classifier_tensorrt
+```
+
+---
+
+
+## 📤 Runtime Outputs
+
+* Prediction logs are written to `logs/predictions_*.csv`
+* Run-level summaries are written to `logs/model_decisions.csv`
+* Missing/unknown class snapshots are written to `images/` (via `Register`)
 
 ---
 
