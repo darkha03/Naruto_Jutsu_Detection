@@ -27,7 +27,7 @@ The goal is to simulate a realistic recognition system where predictions are noi
 
 Demo video:
 
-* https://github.com/user-attachments/assets/ee728095-e960-4cea-aca0-bf66d7e8e223
+https://github.com/user-attachments/assets/ee728095-e960-4cea-aca0-bf66d7e8e223
 
 ---
 
